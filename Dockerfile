@@ -3,17 +3,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy backend package.json first for layer caching
+# Copy backend deps first (layer cache)
 COPY backend-src/package*.json ./
 
-# Install — brings in prisma@5.16.2 (pinned in backend-src/package.json)
+# Install — gets prisma@5.16.2 pinned in backend-src/package.json
 RUN npm install
 
-# Copy all backend-src contents into WORKDIR
-# Done after npm install so node_modules layer is cached separately
+# Copy all backend source files flat into WORKDIR
 COPY backend-src/ .
 
-# Generate Prisma client using local v5 binary — never npx (pulls latest)
+# Generate Prisma Client — reads schema only, no DB needed at build time
 RUN ./node_modules/.bin/prisma generate
 
 # Compile NestJS
@@ -36,4 +35,5 @@ USER nestjs
 
 EXPOSE 3001
 
-CMD ["node", "dist/main"]
+# migrate deploy runs at runtime where DATABASE_URL is available
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/main"]
