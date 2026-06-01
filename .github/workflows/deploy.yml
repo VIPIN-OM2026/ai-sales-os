@@ -1,0 +1,88 @@
+name: CI/CD — AI Sales OS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── JOB 1: Build & Deploy Frontend to GitHub Pages ────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend → GitHub Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build React app
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          cname: ''
+
+  # ─── JOB 2: Run Prisma Migrations on Neon ──────────────────────────────────
+  migrate-database:
+    name: Migrate Database → Neon PostgreSQL
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend-src
+          npm install --prefix /tmp/backend @prisma/client prisma
+          cp ../schema.prisma /tmp/backend/prisma/schema.prisma 2>/dev/null || true
+
+      - name: Run Prisma migrate deploy
+        run: |
+          cd backend-src
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # ─── JOB 3: Trigger Render Redeploy ────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend → Render
+    runs-on: ubuntu-latest
+    needs: [migrate-database]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render deploy webhook
+        run: |
+          curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" | python3 -c "
+          import sys, json
+          try:
+            d = json.load(sys.stdin)
+            print('Render deploy triggered:', d)
+          except:
+            print('Deploy webhook sent')
+          "
