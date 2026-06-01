@@ -17,17 +17,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install & Build
-        run: |
-          node --version
-          npm --version
-          npm install
-          npm run build
+        run: npm install && npm run build
         env:
           NODE_ENV: production
 
@@ -47,15 +43,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      - name: Verify Railway token and deploy
+      - name: Deploy to Railway
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -63,34 +59,17 @@ jobs:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
-          set +e  # Don't exit on error — capture everything
-
-          echo "=== Railway CLI version ===" | tee -a $GITHUB_STEP_SUMMARY
-          railway --version 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Railway whoami ===" | tee -a $GITHUB_STEP_SUMMARY
+          set +e
           railway whoami 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Railway list ===" | tee -a $GITHUB_STEP_SUMMARY
           railway list 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Railway init ===" | tee -a $GITHUB_STEP_SUMMARY
           railway init --name "ai-sales-os" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Set env vars ===" | tee -a $GITHUB_STEP_SUMMARY
           railway variables set \
-            NODE_ENV=production \
-            PORT=3001 \
+            NODE_ENV=production PORT=3001 \
             "DATABASE_URL=$DATABASE_URL" \
-            JWT_ACCESS_EXPIRES=15m \
-            JWT_REFRESH_EXPIRES=7d \
+            JWT_ACCESS_EXPIRES=15m JWT_REFRESH_EXPIRES=7d \
             "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
             "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
             AI_PROVIDER=anthropic \
             FRONTEND_URL=https://vipin-om2026.github.io 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Deploy ===" | tee -a $GITHUB_STEP_SUMMARY
           railway up --detach 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "=== Status ===" | tee -a $GITHUB_STEP_SUMMARY
           railway status 2>&1 | tee -a $GITHUB_STEP_SUMMARY
