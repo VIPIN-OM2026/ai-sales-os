@@ -23,13 +23,10 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: |
-          echo "Node: $(node --version), npm: $(npm --version)" | tee -a $GITHUB_STEP_SUMMARY
-          npm install --legacy-peer-deps 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+        run: npm install --legacy-peer-deps
 
       - name: Build React app
-        run: |
-          npm run build 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+        run: npm run build
         env:
           NODE_ENV: production
 
@@ -57,7 +54,7 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      - name: Deploy to Railway
+      - name: Deploy to Railway and capture URL
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -66,8 +63,26 @@ jobs:
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
           set +e
+
+          echo "## Railway Deploy — AI Sales OS Backend" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Auth check
+          echo "### Auth" >> $GITHUB_STEP_SUMMARY
           railway whoami 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # List projects to find existing one
+          echo "### Projects" >> $GITHUB_STEP_SUMMARY
+          railway list 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Init project
+          echo "### Init" >> $GITHUB_STEP_SUMMARY
           railway init --name "ai-sales-os" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Set env vars
           railway variables set \
             NODE_ENV=production PORT=3001 \
             "DATABASE_URL=$DATABASE_URL" \
@@ -75,6 +90,22 @@ jobs:
             "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
             "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
             AI_PROVIDER=anthropic \
-            FRONTEND_URL=https://vipin-om2026.github.io 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+            FRONTEND_URL=https://vipin-om2026.github.io 2>&1
+
+          # Deploy
+          echo "### Deploy" >> $GITHUB_STEP_SUMMARY
           railway up --detach 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get URL — this is the key output
+          echo "### Service URL" >> $GITHUB_STEP_SUMMARY
           railway status 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Also try domain command
+          echo "### Domain" >> $GITHUB_STEP_SUMMARY
+          railway domain 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Open" >> $GITHUB_STEP_SUMMARY
+          railway open 2>&1 | tee -a $GITHUB_STEP_SUMMARY
