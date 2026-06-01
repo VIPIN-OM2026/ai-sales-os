@@ -6,83 +6,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ─── JOB 1: Deploy Frontend → GitHub Pages ─────────────────────────────────
   deploy-frontend:
     name: Deploy Frontend → GitHub Pages
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Build React app
-        run: npm run build
+      - run: npm install --legacy-peer-deps
+      - run: npm run build
         env:
           NODE_ENV: production
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           force_orphan: true
 
-  # ─── JOB 2: Deploy Backend → Railway ───────────────────────────────────────
   deploy-backend:
     name: Deploy Backend → Railway
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      - name: Deploy to Railway and capture URL
+      - name: Deploy and write URL to repo
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
 
-          echo "## Railway Deploy — AI Sales OS Backend" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          railway init --name "ai-sales-os" 2>&1
 
-          # Auth check
-          echo "### Auth" >> $GITHUB_STEP_SUMMARY
-          railway whoami 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # List projects to find existing one
-          echo "### Projects" >> $GITHUB_STEP_SUMMARY
-          railway list 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Init project
-          echo "### Init" >> $GITHUB_STEP_SUMMARY
-          railway init --name "ai-sales-os" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Set env vars
           railway variables set \
             NODE_ENV=production PORT=3001 \
             "DATABASE_URL=$DATABASE_URL" \
@@ -92,20 +63,31 @@ jobs:
             AI_PROVIDER=anthropic \
             FRONTEND_URL=https://vipin-om2026.github.io 2>&1
 
-          # Deploy
-          echo "### Deploy" >> $GITHUB_STEP_SUMMARY
-          railway up --detach 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          railway up --detach 2>&1
 
-          # Get URL — this is the key output
-          echo "### Service URL" >> $GITHUB_STEP_SUMMARY
-          railway status 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Generate public domain and capture it
+          railway domain 2>&1 > /tmp/domain_out.txt
+          cat /tmp/domain_out.txt
 
-          # Also try domain command
-          echo "### Domain" >> $GITHUB_STEP_SUMMARY
-          railway domain 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Extract URL from domain output
+          DOMAIN=$(cat /tmp/domain_out.txt | grep -oE '[a-z0-9-]+\.up\.railway\.app' | head -1)
 
-          echo "### Open" >> $GITHUB_STEP_SUMMARY
-          railway open 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          if [ -z "$DOMAIN" ]; then
+            # Try service status
+            railway status 2>&1 > /tmp/status_out.txt
+            cat /tmp/status_out.txt
+            DOMAIN=$(cat /tmp/status_out.txt | grep -oE '[a-z0-9-]+\.up\.railway\.app' | head -1)
+          fi
+
+          echo "RAILWAY DOMAIN: $DOMAIN"
+
+          # Write URL to a file in the repo so we can read it back
+          cd $GITHUB_WORKSPACE
+          echo "https://$DOMAIN" > BACKEND_URL.txt
+          cat BACKEND_URL.txt
+
+          git config user.email "vipin.p@opsmonsters.com"
+          git config user.name "CI Bot"
+          git add BACKEND_URL.txt
+          git diff --staged --quiet || git commit -m "chore: update backend URL [skip ci]"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/VIPIN-OM2026/ai-sales-os.git" HEAD:main 2>&1 || true
