@@ -22,11 +22,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build React app
-        run: npm run build
+      - name: Install & Build
+        run: npm install && npm run build
         env:
           NODE_ENV: production
 
@@ -46,24 +43,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      - name: Deploy to Railway
-        working-directory: ./backend-src
+      - name: Check Railway CLI and token
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          echo "Railway CLI version:"
-          railway version
+          echo "Railway CLI version: $(railway --version)"
+          echo "Whoami:"
+          railway whoami 2>&1
+          echo "---"
 
-          echo "Deploying to Railway..."
-          railway up \
-            --service "ai-sales-os-api" \
-            --detach \
-            --yes 2>&1
+      - name: List Railway projects
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Existing projects:"
+          railway list 2>&1
+          echo "---"
 
-      - name: Set Railway environment variables
+      - name: Create project and deploy
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -71,13 +76,29 @@ jobs:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
-          railway variables --set "NODE_ENV=production" \
-            --set "PORT=3001" \
-            --set "DATABASE_URL=$DATABASE_URL" \
-            --set "JWT_ACCESS_EXPIRES=15m" \
-            --set "JWT_REFRESH_EXPIRES=7d" \
-            --set "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
-            --set "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
-            --set "AI_PROVIDER=anthropic" \
-            --set "FRONTEND_URL=https://vipin-om2026.github.io" \
-            --yes 2>&1 || echo "Variables already set"
+          set -e
+
+          # Initialize project if not linked
+          if [ ! -f .railway/config.json ]; then
+            echo "No railway project linked — creating new project..."
+            railway init --name "ai-sales-os" 2>&1
+          fi
+
+          echo "Setting env vars..."
+          railway variables set \
+            NODE_ENV=production \
+            PORT=3001 \
+            "DATABASE_URL=$DATABASE_URL" \
+            JWT_ACCESS_EXPIRES=15m \
+            JWT_REFRESH_EXPIRES=7d \
+            "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
+            "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
+            AI_PROVIDER=anthropic \
+            FRONTEND_URL=https://vipin-om2026.github.io \
+            2>&1
+
+          echo "Deploying..."
+          railway up --detach 2>&1
+
+          echo "Getting service URL..."
+          railway status 2>&1
