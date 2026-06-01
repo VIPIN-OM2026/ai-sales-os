@@ -1,7 +1,7 @@
 {
   "name": "ai-sales-os-api",
   "version": "1.0.0",
-  "description": "AI Sales & Operations OS — NestJS Backend",
+  "description": "AI Sales & Operations OS \u2014 NestJS Backend",
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",
@@ -21,7 +21,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.10",
     "@nestjs/swagger": "^7.4.0",
-    "@prisma/client": "^5.16.2",
+    "@prisma/client": "5.16.2",
     "argon2": "^0.40.3",
     "bcryptjs": "^2.4.3",
     "bull": "^4.16.0",
@@ -46,8 +46,11 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/uuid": "^10.0.0",
-    "prisma": "^5.16.2",
+    "prisma": "5.16.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
