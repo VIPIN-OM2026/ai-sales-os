@@ -21,10 +21,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install & Build
-        run: npm ci && npm run build
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React app
+        run: npm run build
         env:
           NODE_ENV: production
 
@@ -45,18 +47,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@latest
 
       - name: Deploy to Railway
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          # Link or create project, then deploy
-          railway up --detach --service ai-sales-os-api 2>&1 || \
-          railway up --detach 2>&1
+          echo "Railway CLI version:"
+          railway version
 
-      - name: Set environment variables on Railway
+          echo "Deploying to Railway..."
+          railway up \
+            --service "ai-sales-os-api" \
+            --detach \
+            --yes 2>&1
+
+      - name: Set Railway environment variables
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -64,14 +71,13 @@ jobs:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
-          railway variables set \
-            NODE_ENV=production \
-            PORT=3001 \
-            DATABASE_URL="$DATABASE_URL" \
-            JWT_ACCESS_EXPIRES=15m \
-            JWT_REFRESH_EXPIRES=7d \
-            UPSTASH_REDIS_REST_URL="$UPSTASH_REDIS_REST_URL" \
-            UPSTASH_REDIS_REST_TOKEN="$UPSTASH_REDIS_REST_TOKEN" \
-            AI_PROVIDER=anthropic \
-            FRONTEND_URL=https://vipin-om2026.github.io \
-            2>&1 || echo "Variables set (or already exist)"
+          railway variables --set "NODE_ENV=production" \
+            --set "PORT=3001" \
+            --set "DATABASE_URL=$DATABASE_URL" \
+            --set "JWT_ACCESS_EXPIRES=15m" \
+            --set "JWT_REFRESH_EXPIRES=7d" \
+            --set "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
+            --set "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
+            --set "AI_PROVIDER=anthropic" \
+            --set "FRONTEND_URL=https://vipin-om2026.github.io" \
+            --yes 2>&1 || echo "Variables already set"
