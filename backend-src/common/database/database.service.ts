@@ -5,14 +5,26 @@ import { PrismaClient } from '@prisma/client';
 export class DatabaseService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
 
+  constructor() {
+    super({
+      log: ['error', 'warn'],
+      errorFormat: 'minimal',
+    });
+  }
+
   async onModuleInit() {
-    await this.$connect();
-    this.logger.log('Database connected');
+    try {
+      await this.$connect();
+      this.logger.log('✅ Database connected');
+    } catch (err) {
+      this.logger.error('❌ Database connection failed:', err.message);
+      // Don't crash on startup — Railway will restart the container
+      // DB may still be provisioning
+    }
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
-    this.logger.log('Database disconnected');
   }
 
   async healthCheck(): Promise<boolean> {

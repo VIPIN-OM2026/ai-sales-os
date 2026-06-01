@@ -13,6 +13,7 @@ import { appConfig, jwtConfig, redisConfig, aiConfig, whatsappConfig } from './c
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      ignoreEnvFile: false,
       load: [appConfig, jwtConfig, redisConfig, aiConfig, whatsappConfig],
     }),
     EventEmitterModule.forRoot(),

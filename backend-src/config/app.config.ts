@@ -7,8 +7,8 @@ export const appConfig = registerAs('app', () => ({
 }));
 
 export const jwtConfig = registerAs('jwt', () => ({
-  accessSecret: process.env.JWT_ACCESS_SECRET,
-  refreshSecret: process.env.JWT_REFRESH_SECRET,
+  accessSecret: process.env.JWT_ACCESS_SECRET || 'fallback-access-secret-change-in-prod',
+  refreshSecret: process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret-change-in-prod',
   accessExpiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
   refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES || '7d',
 }));
@@ -20,13 +20,13 @@ export const redisConfig = registerAs('redis', () => ({
 }));
 
 export const aiConfig = registerAs('ai', () => ({
-  provider: process.env.AI_PROVIDER || 'openai',
-  openaiKey: process.env.OPENAI_API_KEY,
-  anthropicKey: process.env.ANTHROPIC_API_KEY,
+  provider: process.env.AI_PROVIDER || 'anthropic',
+  openaiKey: process.env.OPENAI_API_KEY || '',
+  anthropicKey: process.env.ANTHROPIC_API_KEY || '',
 }));
 
 export const whatsappConfig = registerAs('whatsapp', () => ({
-  apiUrl: process.env.WHATSAPP_API_URL,
-  accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
-  phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+  apiUrl: process.env.WHATSAPP_API_URL || '',
+  accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
+  phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
 }));

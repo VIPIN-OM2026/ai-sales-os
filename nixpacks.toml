@@ -9,7 +9,6 @@ cmds = [
 [phases.build]
 cmds = [
   "cd backend-src && ./node_modules/.bin/prisma generate",
-  "cd backend-src && ./node_modules/.bin/prisma migrate deploy",
   "cd backend-src && npm run build"
 ]
 
