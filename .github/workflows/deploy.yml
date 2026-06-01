@@ -23,7 +23,11 @@ jobs:
           node-version: '20'
 
       - name: Install & Build
-        run: npm install && npm run build
+        run: |
+          node --version
+          npm --version
+          npm install
+          npm run build
         env:
           NODE_ENV: production
 
@@ -51,24 +55,7 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      - name: Check Railway CLI and token
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Railway CLI version: $(railway --version)"
-          echo "Whoami:"
-          railway whoami 2>&1
-          echo "---"
-
-      - name: List Railway projects
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Existing projects:"
-          railway list 2>&1
-          echo "---"
-
-      - name: Create project and deploy
+      - name: Verify Railway token and deploy
         working-directory: ./backend-src
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -76,15 +63,21 @@ jobs:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
-          set -e
+          set +e  # Don't exit on error — capture everything
 
-          # Initialize project if not linked
-          if [ ! -f .railway/config.json ]; then
-            echo "No railway project linked — creating new project..."
-            railway init --name "ai-sales-os" 2>&1
-          fi
+          echo "=== Railway CLI version ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway --version 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-          echo "Setting env vars..."
+          echo "=== Railway whoami ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway whoami 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
+          echo "=== Railway list ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway list 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
+          echo "=== Railway init ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway init --name "ai-sales-os" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
+          echo "=== Set env vars ===" | tee -a $GITHUB_STEP_SUMMARY
           railway variables set \
             NODE_ENV=production \
             PORT=3001 \
@@ -94,11 +87,10 @@ jobs:
             "UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL" \
             "UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN" \
             AI_PROVIDER=anthropic \
-            FRONTEND_URL=https://vipin-om2026.github.io \
-            2>&1
+            FRONTEND_URL=https://vipin-om2026.github.io 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-          echo "Deploying..."
-          railway up --detach 2>&1
+          echo "=== Deploy ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway up --detach 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
-          echo "Getting service URL..."
-          railway status 2>&1
+          echo "=== Status ===" | tee -a $GITHUB_STEP_SUMMARY
+          railway status 2>&1 | tee -a $GITHUB_STEP_SUMMARY
