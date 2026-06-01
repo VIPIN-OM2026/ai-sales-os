@@ -38,7 +38,7 @@ jobs:
           publish_dir: ./dist
           force_orphan: true
 
-  # ─── JOB 2: Create or Update Render Service ────────────────────────────────
+  # ─── JOB 2: Deploy Backend to Render (includes DB migration) ───────────────
   deploy-backend:
     name: Deploy Backend → Render
     runs-on: ubuntu-latest
@@ -47,119 +47,90 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create or redeploy Render service
+      - name: Check if Render service exists, create or redeploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
-          # ── Check if service already exists ──────────────────────────────
-          EXISTING=$(curl -s \
-            -H "Authorization: Bearer $RENDER_API_KEY" \
-            -H "Accept: application/json" \
-            "https://api.render.com/v1/services?name=ai-sales-os-api&limit=1")
+          python3 << 'PYEOF'
+          import json, os, urllib.request, urllib.error, time
 
-          SERVICE_ID=$(echo "$EXISTING" | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              items = d if isinstance(d, list) else []
-              for item in items:
-                  svc = item.get('service', {})
-                  if svc.get('name') == 'ai-sales-os-api':
-                      print(svc.get('id', ''))
+          API_KEY   = os.environ["RENDER_API_KEY"]
+          DB_URL    = os.environ["DATABASE_URL"]
+          REDIS_URL = os.environ["UPSTASH_REDIS_REST_URL"]
+          REDIS_TOK = os.environ["UPSTASH_REDIS_REST_TOKEN"]
+
+          HEADERS = {
+              "Authorization": f"Bearer {API_KEY}",
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+          }
+
+          def call(method, path, body=None):
+              url = f"https://api.render.com/v1{path}"
+              data = json.dumps(body).encode() if body else None
+              req = urllib.request.Request(url, data=data, headers=HEADERS, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  return json.loads(e.read())
+
+          # ── Get owner ID ──────────────────────────────────────────────────
+          owners = call("GET", "/owners?limit=1")
+          owner_id = owners[0]["owner"]["id"] if owners and isinstance(owners, list) else None
+          print(f"Owner ID: {owner_id}")
+
+          # ── Check existing services ───────────────────────────────────────
+          services = call("GET", "/services?limit=20")
+          service_id = None
+          if isinstance(services, list):
+              for item in services:
+                  svc = item.get("service", {})
+                  if svc.get("name") == "ai-sales-os-api":
+                      service_id = svc["id"]
+                      print(f"Found existing service: {service_id}")
                       break
-          except:
-              pass
-          " 2>/dev/null)
 
-          echo "Existing service ID: '$SERVICE_ID'"
+          if not service_id:
+              print("Creating new Render service...")
+              payload = {
+                  "type": "web_service",
+                  "name": "ai-sales-os-api",
+                  "ownerId": owner_id,
+                  "repo": "https://github.com/VIPIN-OM2026/ai-sales-os",
+                  "branch": "main",
+                  "rootDir": "backend-src",
+                  "buildCommand": "npm install && npx prisma generate && npx prisma migrate deploy && npm run build",
+                  "startCommand": "node dist/main",
+                  "plan": "free",
+                  "region": "oregon",
+                  "healthCheckPath": "/api/v1/health",
+                  "envVars": [
+                      {"key": "NODE_ENV",               "value": "production"},
+                      {"key": "PORT",                   "value": "3001"},
+                      {"key": "DATABASE_URL",            "value": DB_URL},
+                      {"key": "JWT_ACCESS_SECRET",       "generateValue": True},
+                      {"key": "JWT_REFRESH_SECRET",      "generateValue": True},
+                      {"key": "JWT_ACCESS_EXPIRES",      "value": "15m"},
+                      {"key": "JWT_REFRESH_EXPIRES",     "value": "7d"},
+                      {"key": "UPSTASH_REDIS_REST_URL",  "value": REDIS_URL},
+                      {"key": "UPSTASH_REDIS_REST_TOKEN","value": REDIS_TOK},
+                      {"key": "AI_PROVIDER",             "value": "anthropic"},
+                      {"key": "FRONTEND_URL",            "value": "https://vipin-om2026.github.io"},
+                  ],
+              }
+              result = call("POST", "/services", payload)
+              svc = result.get("service", result)
+              sid = svc.get("id", "unknown")
+              print(f"✅ Service created: {sid}")
+              print(f"   URL: https://ai-sales-os-api.onrender.com")
+          else:
+              print("Triggering redeploy...")
+              result = call("POST", f"/services/{service_id}/deploys", {"clearCache": "do_not_clear"})
+              print(f"✅ Redeploy triggered — status: {result.get('status', 'queued')}")
+              print(f"   Deploy ID: {result.get('id', 'unknown')}")
 
-          if [ -z "$SERVICE_ID" ]; then
-            echo "── Creating new Render service ──"
-
-            # Get owner ID first
-            OWNER_RESP=$(curl -s \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              "https://api.render.com/v1/owners?limit=1")
-
-            OWNER_ID=$(echo "$OWNER_RESP" | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              items = d if isinstance(d, list) else []
-              if items:
-                  print(items[0].get('owner', {}).get('id', ''))
-          except Exception as e:
-              print('ERR:', e, file=sys.stderr)
-          " 2>/dev/null)
-
-            echo "Owner ID: $OWNER_ID"
-
-            CREATE_RESP=$(curl -s -X POST \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              -H "Content-Type: application/json" \
-              "https://api.render.com/v1/services" \
-              -d "{
-                \"type\": \"web_service\",
-                \"name\": \"ai-sales-os-api\",
-                \"ownerId\": \"$OWNER_ID\",
-                \"repo\": \"https://github.com/VIPIN-OM2026/ai-sales-os\",
-                \"branch\": \"main\",
-                \"rootDir\": \"backend-src\",
-                \"buildCommand\": \"npm install && npx prisma generate && npm run build\",
-                \"startCommand\": \"node dist/main\",
-                \"plan\": \"free\",
-                \"region\": \"oregon\",
-                \"healthCheckPath\": \"/api/v1/health\",
-                \"envVars\": [
-                  {\"key\": \"NODE_ENV\", \"value\": \"production\"},
-                  {\"key\": \"PORT\", \"value\": \"3001\"},
-                  {\"key\": \"DATABASE_URL\", \"value\": \"$DATABASE_URL\"},
-                  {\"key\": \"JWT_ACCESS_SECRET\", \"generateValue\": true},
-                  {\"key\": \"JWT_REFRESH_SECRET\", \"generateValue\": true},
-                  {\"key\": \"JWT_ACCESS_EXPIRES\", \"value\": \"15m\"},
-                  {\"key\": \"JWT_REFRESH_EXPIRES\", \"value\": \"7d\"},
-                  {\"key\": \"UPSTASH_REDIS_REST_URL\", \"value\": \"$UPSTASH_REDIS_REST_URL\"},
-                  {\"key\": \"UPSTASH_REDIS_REST_TOKEN\", \"value\": \"$UPSTASH_REDIS_REST_TOKEN\"},
-                  {\"key\": \"AI_PROVIDER\", \"value\": \"anthropic\"},
-                  {\"key\": \"FRONTEND_URL\", \"value\": \"https://vipin-om2026.github.io\"}
-                ]
-              }")
-
-            echo "$CREATE_RESP" | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              svc = d.get('service', d)
-              sid = svc.get('id', 'unknown')
-              sname = svc.get('name', 'unknown')
-              surl = svc.get('serviceDetails', {}).get('url', 'pending')
-              print(f'✅ Service created: {sname}')
-              print(f'   ID: {sid}')
-              print(f'   URL: https://{sname}.onrender.com')
-          except Exception as e:
-              print('Response:', sys.stdin.read()[:500] if hasattr(sys.stdin, \"read\") else str(d)[:500])
-          "
-
-          else
-            echo "── Service exists — triggering redeploy ──"
-
-            DEPLOY_RESP=$(curl -s -X POST \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              -H "Content-Type: application/json" \
-              "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
-              -d '{"clearCache": "do_not_clear"}')
-
-            echo "$DEPLOY_RESP" | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              print('✅ Redeploy triggered')
-              print('   Deploy ID:', d.get('id', 'unknown'))
-              print('   Status:', d.get('status', 'unknown'))
-          except:
-              print('Deploy response received')
-          "
-          fi
+          PYEOF
