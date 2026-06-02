@@ -3,25 +3,26 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy backend deps first (layer cache)
 COPY backend-src/package*.json ./
-
-# Install — gets prisma@5.16.2 pinned in backend-src/package.json
 RUN npm install
-
-# Copy all backend source files flat into WORKDIR
 COPY backend-src/ .
-
-# Generate Prisma Client — reads schema only, no DB needed at build time
 RUN ./node_modules/.bin/prisma generate
-
-# Compile NestJS
 RUN npm run build
 
 # ─── Stage 2: Runner ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
 WORKDIR /app
+
+# OpenSSL 1.1 — required by Prisma query engine on Alpine
+# libssl1.1 is not in Alpine 3.17+ repos, install from Alpine 3.16
+RUN apk add --no-cache \
+      openssl \
+      libssl3 \
+ && wget -q -O /tmp/libssl1.1.apk \
+      https://dl-cdn.alpinelinux.org/alpine/v3.16/main/x86_64/libssl1.1-1.1.1t-r0.apk \
+ && apk add --no-cache --allow-untrusted /tmp/libssl1.1.apk \
+ && rm /tmp/libssl1.1.apk
 
 RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nestjs
@@ -35,5 +36,4 @@ USER nestjs
 
 EXPOSE 3001
 
-# migrate deploy runs at runtime where DATABASE_URL is available
 CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/main"]
