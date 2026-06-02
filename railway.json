@@ -1,10 +1,12 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "builder": "NIXPACKS",
+    "nixpacksConfigPath": "backend-src/nixpacks.toml",
+    "watchPatterns": ["backend-src/**"]
   },
   "deploy": {
+    "startCommand": "./node_modules/.bin/prisma migrate deploy && node dist/main",
     "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
